@@ -1,0 +1,163 @@
+# A flight through falling code at warp speed. Columns of glyphs hang in space: tiny and dim in the distance,
+# they rush closer, grow, and stream past, while the characters in each column keep falling.
+# The glyphs are Katakana-like and ancient-script characters.
+format = 1
+name = "Laser Code"
+author = "Brian Lawes"
+license = "CC0-1.0"
+description = "Warp-speed flight through columns of falling green code in Katakana and ancient scripts."
+stage = "screen"
+fps = 24
+fade = 0
+background = "#000302"
+preview = 45
+
+[params]
+# The camera flies along z. Columns are recycled from far to near.
+zfar = 40
+znear = 0.4
+# Columns fade out from here in, before they grow huge (they would cost too much to draw at 4K).
+nearfade = 1.4
+# Spacing of glyphs in a column, in world units, and glyphs to a column.
+g = 0.1
+slots = 30
+# Forward speed, world units a second.
+vz = 6
+# Pixels of a glyph in its sheet frame.
+gpx = 84
+
+
+[[setting]]
+name = "pace"
+label = "Warp speed"
+kind = "choice"
+choices = ["Drift", "Cruise", "Warp", "Hyper"]
+values = [0.25, 0.5, 1, 1.7]
+default = 1
+
+[[setting]]
+name = "fallspeed"
+label = "Fall speed"
+kind = "choice"
+choices = ["Slow", "Normal", "Fast"]
+values = [0.5, 1, 2]
+default = 1
+
+# How many columns fly past.
+[[setting]]
+name = "density"
+label = "Density"
+kind = "choice"
+choices = ["Sparse", "Normal", "Dense", "Packed", "Swarm"]
+values = [80, 140, 200, 250, 310]
+default = 250
+
+# The glyph sheet holds the code in each of these colours.
+[[setting]]
+name = "colour"
+label = "Colour"
+kind = "choice"
+choices = ["Green", "Cyan", "Amber", "Red", "Violet", "White"]
+values = [0, 1, 2, 3, 4, 5]
+default = 0
+
+
+[[scene]]
+name = "Warp"
+duration = 3600
+fade = 0
+let = [
+  "opening = smoothstep(0, 2.5, time)",
+  "half = aspect / 2",
+  "zrange = zfar - znear",
+  "streak = pick(colour, #2fd768, #22c4d8, #e8a000, #e83535, #a060e8, #c4c4c4)",
+]
+
+# Star streaks: faint lines racing out from the vanishing point.
+[[scene.draw]]
+kind = "lines"
+count = 260
+samples = 2
+let = [
+  "ph = time * pace * vz * 1.6 / zrange + hash(i * 3.71)",
+  "seed = i * 5.17 + floor(ph) * 11.3",
+  "z = zfar - fract(ph) * zrange",
+  "ang = rand(seed) * tau",
+  "rad = 0.3 + 3 * rand(seed + 0.4)",
+  "wx = rad * cos(ang) * aspect * 0.7",
+  "wy = rad * sin(ang)",
+  # The tail is where the star was a moment ago.
+  "zt = z + 0.9 * pace",
+]
+visible = "z > znear"
+px = "wx / mix(zt, z, s)"
+py = "wy / mix(zt, z, s)"
+width = "0.0012"
+color = "streak"
+opacity = "opening * 0.45 * smoothstep(zfar, zfar * 0.6, z)"
+
+# The columns, drawn far to near.
+[[scene.draw]]
+kind = "group"
+sort = true
+opacity = "opening"
+
+  [[scene.draw.draw]]
+  kind = "group"
+  count = 310
+  let = [
+    "ph = time * pace * vz / zrange + hash(i * 1.913)",
+    "seed = i * 7.31 + floor(ph) * 13.7",
+    "z = zfar - fract(ph) * zrange",
+    # Placed either side of the line of flight, leaving a clear lane ahead. Half stay near the lane; the rest
+    # stand further out, so the sides of the screen fill in the middle distance too.
+    "side = rand(seed) < 0.5 ? -1 : 1",
+    "out = rand(seed + 0.6) < 0.5 ? 1.6 + 6 * rand(seed + 0.3) : 0.35 + 2.2 * sqr(rand(seed + 0.3))",
+    "wx = side * out * aspect * 0.7",
+    "wy = (rand(seed + 0.8) - 0.5) * 1.2",
+    "sc = 1 / z",
+    "sx = wx * sc",
+    "sy = wy * sc",
+    # Fade in out of the distance, and out just before the camera. Beyond the first 100, columns fade out
+    # further off, before they grow large: they fill the middle distance for little drawing cost.
+    "nf = i < 100 ? nearfade : nearfade * (1.6 + 2 * rand(seed + 1.4))",
+    "lum = smoothstep(zfar, zfar * 0.7, z) * smoothstep(nf, nf * 2.1, z)",
+    # The characters fall down the column, each column at its own rate.
+    "fall = time * fallspeed * (1.2 + 1.8 * rand(seed + 1.1))",
+    "shift = fract(fall)",
+    "base = floor(fall)",
+    "cell = g * sc",
+    # Those extra columns are also shorter, which keeps them cheap to draw.
+    "top = i < 100 ? 0 : slots - 12 - floor(10 * rand(seed + 1.9))",
+  ]
+  depth = "-z"
+  visible = "i < density && z > nf && lum > 0.01 && abs(sx) < half + cell && abs(sy) < 0.5 + slots * cell"
+  x = "sx"
+  y = "sy"
+
+    [[scene.draw.draw.draw]]
+    kind = "sprite"
+    count = 30
+    file = "glyphs.png"
+    frame_size = [104, 104]
+    anchor = [52, 52]
+    smooth = true
+    pixel = "cell * 0.84 / gpx"
+    let = [
+      # The leader holds at the foot of the column, changing as the code falls into it.
+      "lead = i == slots - 1",
+      "jp = lead ? slots - 0.5 : i + shift",
+      "row = i - base",
+      "ly = (jp - slots / 2) * cell",
+      # Most glyphs change now and then; about one in eight flickers through symbols fast.
+      "rate = hash(seed * 0.37 + row * 1.7) < 0.12 ? 9 : 0.5",
+      "tick = floor(time * rate + hash(seed * 0.91 + row * 3.3) * 7)",
+      "gl = floor(hash(seed * 0.13 + row * 7.7 + tick * 0.618) * 64)",
+      # Glyphs slide in at the top, and melt into the leader at the foot.
+      "ends = lead ? 1 : clamp(min(jp - top, slots - 1 - jp), 0, 1)",
+    ]
+    visible = "i >= top && abs(sy + ly) < 0.5 + cell"
+    y = "ly"
+    frame = "colour * 128 + (lead ? 64 : 0) + gl"
+    flip = "gl < 40"
+    opacity = "lum * ends * (lead ? 1 : (0.2 + 0.8 * pow((jp - top) / (slots - top), 1.6)) * (0.7 + 0.3 * hash(seed + row * 9.9 + tick)))"
